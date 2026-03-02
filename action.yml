@@ -1,0 +1,17 @@
+name: 'WeChat Article to Markdown'
+description: '自动将微信公众号文章转换为 Markdown 并回复到 Issue'
+author: 'hanxuanliang'
+
+inputs:
+  github-token:
+    description: 'GitHub Token for API access'
+    required: true
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: 'action.js'
+
+branding:
+  icon: 'file-text'
+  color: 'green'

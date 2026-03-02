@@ -14,6 +14,8 @@
 
 ## 快速开始
 
+### 方式 1: CLI 命令行使用
+
 ```bash
 # 安装依赖
 npm install
@@ -32,6 +34,42 @@ output/
         ├── img_001.png
         ├── img_002.png
         └── ...
+```
+
+### 方式 2: GitHub Action 自动化
+
+在你的仓库中使用此 Action，可以通过 Issue 自动抓取微信文章。
+
+#### 本仓库使用（已配置）
+
+1. 创建一个新 Issue
+2. 在 Issue 正文中粘贴微信文章链接
+3. Action 会自动抓取并将 Markdown 回复到 Issue 评论中
+4. 支持多个链接，每个链接单独回复
+
+#### 其他仓库使用
+
+在你的仓库中创建 `.github/workflows/wechat-to-md.yml`：
+
+```yaml
+name: WeChat Article to Markdown
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Convert WeChat articles
+        uses: hanxuanliang/wechat-article-to-markdown@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ## 输出示例
