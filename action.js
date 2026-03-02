@@ -6,7 +6,10 @@ const github = require("@actions/github");
  * 从文本中提取所有微信文章链接
  */
 function extractWechatUrls(text) {
-    const regex = /https:\/\/mp\.weixin\.qq\.com\/s\/[^\s)]+/g;
+    // 匹配两种格式：
+    // 1. https://mp.weixin.qq.com/s/xxxxx
+    // 2. https://mp.weixin.qq.com/s?xxx=xxx
+    const regex = /https:\/\/mp\.weixin\.qq\.com\/s[/?][^\s)]+/g;
     const matches = text.match(regex) || [];
     return [...new Set(matches)]; // 去重
 }
