@@ -15,6 +15,31 @@ function extractWechatUrls(text) {
 }
 
 /**
+ * 确保 label 存在，如果不存在则创建
+ */
+async function ensureLabel(octokit, owner, repo, name, color, description) {
+    try {
+        await octokit.rest.issues.getLabel({
+            owner,
+            repo,
+            name,
+        });
+    } catch (error) {
+        if (error.status === 404) {
+            // Label 不存在，创建它
+            await octokit.rest.issues.createLabel({
+                owner,
+                repo,
+                name,
+                color,
+                description,
+            });
+            console.log(`Created label: ${name} (${color})`);
+        }
+    }
+}
+
+/**
  * 主函数
  */
 async function run() {
@@ -41,6 +66,11 @@ async function run() {
 
         console.log(`Found ${urls.length} WeChat article URL(s)`);
 
+        // 确保所需的 labels 存在
+        await ensureLabel(octokit, context.repo.owner, context.repo.repo, "spying", "fbca04", "正在抓取微信文章");
+        await ensureLabel(octokit, context.repo.owner, context.repo.repo, "success", "0e8a16", "文章抓取成功");
+        await ensureLabel(octokit, context.repo.owner, context.repo.repo, "failed", "d73a4a", "文章抓取失败");
+
         // 添加 "spying" 标签，表示开始抓取
         await octokit.rest.issues.addLabels({
             owner: context.repo.owner,
@@ -51,6 +81,7 @@ async function run() {
         console.log("Added 'spying' label");
 
         let hasError = false;
+        const articleTitles = [];
 
         // 逐个处理链接并回复
         for (const url of urls) {
@@ -63,6 +94,7 @@ async function run() {
                 hasError = true;
             } else {
                 commentBody = result.markdown;
+                articleTitles.push(result.title);
             }
 
             // 发布评论
@@ -95,6 +127,28 @@ async function run() {
             labels: [finalLabel],
         });
         console.log(`Added '${finalLabel}' label`);
+
+        // 如果全部成功，更新 Issue 标题并关闭
+        if (!hasError && articleTitles.length > 0) {
+            let newTitle;
+            if (articleTitles.length === 1) {
+                // 单篇文章：直接使用文章标题
+                newTitle = articleTitles[0];
+            } else {
+                // 多篇文章：显示第一篇 + 数量
+                newTitle = `${articleTitles[0]} + ${articleTitles.length - 1}篇更多`;
+            }
+
+            // 更新 Issue 标题并关闭
+            await octokit.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                title: newTitle,
+                state: "closed",
+            });
+            console.log(`Updated issue title and closed: ${newTitle}`);
+        }
 
         console.log("All articles processed");
     } catch (error) {

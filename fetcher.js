@@ -14,21 +14,29 @@ const HEADERS = {
  * 从 HTML script 标签中提取发布时间
  */
 function extractPublishTime(html) {
-    const m1 = html.match(/create_time\s*:\s*JsDecode\('([^']+)'\)/);
-    if (m1) {
-        const val = m1[1];
-        const ts = parseInt(val, 10);
-        if (!isNaN(ts) && ts > 0) {
-            return formatTimestamp(ts);
+    // 尝试多种匹配模式
+    const patterns = [
+        /var\s+ct\s*=\s*"(\d{10})"/,                          // var ct = "1234567890"
+        /create_time\s*=\s*"(\d{10})"/,                      // create_time = "1234567890"
+        /create_time\s*:\s*"(\d{10})"/,                      // create_time: "1234567890"
+        /create_time\s*:\s*(\d{10})/,                        // create_time: 1234567890
+        /create_time\s*=\s*(\d{10})/,                        // create_time = 1234567890
+        /publish_time\s*=\s*"(\d{10})"/,                     // publish_time = "1234567890"
+        /var\s+publish_time\s*=\s*"(\d{10})"/,               // var publish_time = "1234567890"
+        /createTime\s*:\s*"(\d{10})"/,                       // createTime: "1234567890"
+        /createTime\s*:\s*(\d{10})/,                         // createTime: 1234567890
+    ];
+
+    for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match && match[1]) {
+            const ts = parseInt(match[1], 10);
+            if (!isNaN(ts) && ts > 1000000000) { // 确保是有效的时间戳（2001年之后）
+                return formatTimestamp(ts);
+            }
         }
-        return val;
     }
 
-    const m2 = html.match(/create_time\s*:\s*'(\d+)'/);
-    if (m2) {
-        const ts = parseInt(m2[1], 10);
-        return formatTimestamp(ts);
-    }
     return "";
 }
 
