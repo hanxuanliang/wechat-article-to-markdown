@@ -1,4 +1,5 @@
-const { fetchArticle } = require("./fetcher");
+const { fetchArticle } = require("./wechat-fetcher");
+const { fetchTweet } = require("./twitter-fetcher");
 const core = require("@actions/core");
 const github = require("@actions/github");
 
@@ -10,6 +11,15 @@ function extractWechatUrls(text) {
     // 1. https://mp.weixin.qq.com/s/xxxxx
     // 2. https://mp.weixin.qq.com/s?xxx=xxx
     const regex = /https:\/\/mp\.weixin\.qq\.com\/s[/?][^\s)]+/g;
+    const matches = text.match(regex) || [];
+    return [...new Set(matches)]; // 去重
+}
+
+/**
+ * 从文本中提取所有 Twitter/X 链接
+ */
+function extractTwitterUrls(text) {
+    const regex = /https:\/\/(x\.com|twitter\.com)\/[a-zA-Z0-9_]+\/status\/\d+/g;
     const matches = text.match(regex) || [];
     return [...new Set(matches)]; // 去重
 }
@@ -57,19 +67,25 @@ async function run() {
         const issueNumber = context.payload.issue.number;
         const issueBody = context.payload.issue.body || "";
 
-        // 提取微信链接
-        const urls = extractWechatUrls(issueBody);
-        if (urls.length === 0) {
-            console.log("No WeChat article URLs found in issue body");
+        // 分别提取微信和 Twitter 链接
+        const wechatUrls = extractWechatUrls(issueBody);
+        const twitterUrls = extractTwitterUrls(issueBody);
+
+        if (wechatUrls.length === 0 && twitterUrls.length === 0) {
+            console.log("No WeChat or Twitter URLs found in issue body");
             return;
         }
 
-        console.log(`Found ${urls.length} WeChat article URL(s)`);
+        console.log(`Found ${wechatUrls.length} WeChat URL(s), ${twitterUrls.length} Twitter URL(s)`);
 
-        // 确保所需的 labels 存在
-        await ensureLabel(octokit, context.repo.owner, context.repo.repo, "spying", "fbca04", "正在抓取微信文章");
-        await ensureLabel(octokit, context.repo.owner, context.repo.repo, "success", "0e8a16", "文章抓取成功");
-        await ensureLabel(octokit, context.repo.owner, context.repo.repo, "failed", "d73a4a", "文章抓取失败");
+        // 确保所需的 labels 存在（并行）
+        await Promise.all([
+            ensureLabel(octokit, context.repo.owner, context.repo.repo, "spying", "fbca04", "正在抓取文章"),
+            ensureLabel(octokit, context.repo.owner, context.repo.repo, "success", "0e8a16", "文章抓取成功"),
+            ensureLabel(octokit, context.repo.owner, context.repo.repo, "failed", "d73a4a", "文章抓取失败"),
+            ensureLabel(octokit, context.repo.owner, context.repo.repo, "wechat", "2da44e", "微信公众号文章"),
+            ensureLabel(octokit, context.repo.owner, context.repo.repo, "twitter", "1d9bf0", "Twitter/X 推文"),
+        ]);
 
         // 添加 "spying" 标签，表示开始抓取
         await octokit.rest.issues.addLabels({
@@ -80,13 +96,31 @@ async function run() {
         });
         console.log("Added 'spying' label");
 
+        // 根据检测到的 URL 类型，添加来源 label
+        const sourceLabels = [];
+        if (wechatUrls.length > 0) sourceLabels.push("wechat");
+        if (twitterUrls.length > 0) sourceLabels.push("twitter");
+        await octokit.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: issueNumber,
+            labels: sourceLabels,
+        });
+        console.log(`Added source labels: ${sourceLabels.join(", ")}`);
+
         let hasError = false;
         const articleTitles = [];
+        const authorLabels = new Set();
 
-        // 逐个处理链接并回复
-        for (const url of urls) {
-            console.log(`Processing: ${url}`);
-            const result = await fetchArticle(url);
+        // 统一任务列表：每个 URL 对应一个 fetcher
+        const tasks = [
+            ...wechatUrls.map((url) => ({ url, type: "WeChat", fetch: fetchArticle })),
+            ...twitterUrls.map((url) => ({ url, type: "Twitter", fetch: fetchTweet })),
+        ];
+
+        for (const { url, type, fetch } of tasks) {
+            console.log(`Processing ${type}: ${url}`);
+            const result = await fetch(url);
 
             let commentBody;
             if (result.error) {
@@ -95,17 +129,30 @@ async function run() {
             } else {
                 commentBody = result.markdown;
                 articleTitles.push(result.title);
+                if (result.author) authorLabels.add(result.author);
             }
 
-            // 发布评论
             await octokit.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
                 body: commentBody,
             });
-
             console.log(`Comment posted for: ${url}`);
+        }
+
+        // 添加作者 label
+        for (const author of authorLabels) {
+            await ensureLabel(octokit, context.repo.owner, context.repo.repo, author, "e4e669", "文章作者");
+        }
+        if (authorLabels.size > 0) {
+            await octokit.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: [...authorLabels],
+            });
+            console.log(`Added author labels: ${[...authorLabels].join(", ")}`);
         }
 
         // 移除 "spying" 标签

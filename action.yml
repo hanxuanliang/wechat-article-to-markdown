@@ -1,5 +1,5 @@
-name: 'WeChat Article to Markdown'
-description: '自动将微信公众号文章转换为 Markdown 并回复到 Issue'
+name: 'Article to Markdown'
+description: '自动将微信公众号/Twitter 文章转换为 Markdown 并回复到 Issue'
 author: 'hanxuanliang'
 
 inputs:
